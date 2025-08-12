@@ -9,6 +9,13 @@ from config import NGROK_AUTHTOKEN
 
 app = FastAPI(title="LLM-Powered Data Analyst Agent with ngrok")
 
+
+# ✅ Simple health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
 def startup_event():
     """Start ngrok tunnel at app startup."""
