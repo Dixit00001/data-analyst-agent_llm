@@ -4,7 +4,6 @@ import io
 import base64
 
 def encode_plot_to_base64():
-    """Saves current matplotlib figure to base64 PNG string."""
     buf = io.BytesIO()
     plt.savefig(buf, format="png", bbox_inches="tight")
     plt.close()
@@ -12,21 +11,17 @@ def encode_plot_to_base64():
     return base64.b64encode(buf.read()).decode("utf-8")
 
 def run_pipeline(questions_file, data_files):
-    # Load CSV (first file given)
     df = pd.read_csv(data_files[0])
 
-    # Ensure columns exist
     if not all(col in df.columns for col in ["Region", "Sales", "Date"]):
         raise ValueError("CSV must have 'Region', 'Sales', and 'Date' columns")
 
-    # Required calculations
     total_sales = df["Sales"].sum()
     top_region = df.groupby("Region")["Sales"].sum().idxmax()
     day_sales_correlation = df["Date"].apply(lambda x: pd.to_datetime(x).day).corr(df["Sales"])
     median_sales = df["Sales"].median()
     total_sales_tax = total_sales * 0.10
 
-    # Plot 1: Bar chart of total sales by region (blue bars)
     sales_by_region = df.groupby("Region")["Sales"].sum()
     sales_by_region.plot(kind="bar", color="blue")
     plt.title("Total Sales by Region")
@@ -34,7 +29,6 @@ def run_pipeline(questions_file, data_files):
     plt.ylabel("Total Sales")
     bar_chart_b64 = encode_plot_to_base64()
 
-    # Plot 2: Cumulative sales over time (red line)
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.sort_values("Date")
     df["CumulativeSales"] = df["Sales"].cumsum()
@@ -44,7 +38,6 @@ def run_pipeline(questions_file, data_files):
     plt.ylabel("Cumulative Sales")
     cumulative_sales_chart_b64 = encode_plot_to_base64()
 
-    # Final JSON result
     return {
         "total_sales": float(round(total_sales, 2)),
         "top_region": str(top_region),
