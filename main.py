@@ -1,43 +1,47 @@
 import os
-import requests
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from typing import List
-from pydantic import BaseModel
-import pandas as pd
 import io
 import base64
+import pandas as pd
 import matplotlib.pyplot as plt
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from typing import List
+from pydantic import BaseModel
+from openai import OpenAI  # Use OpenAI library which is compatible with OpenRouter
 
-# ===== FastAPI app =====
+# = FastAPI app =
 app = FastAPI()
 
-# ===== Hugging Face API Config =====
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")  # Must be set before running uvicorn
-HF_API_URL = "https://api-inference.huggingface.co/models/gpt2"  # Change model if needed
-headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+# = OpenRouter API Config =
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")  # Set this in your environment
+if not OPENROUTER_API_KEY:
+    raise ValueError("Please set OPENROUTER_API_KEY environment variable")
 
-def query_huggingface_api(prompt: str) -> str:
-    """Send a text prompt to Hugging Face model and return the generated text."""
-    payload = {"inputs": prompt, "options": {"wait_for_model": True}}
-    response = requests.post(HF_API_URL, headers=headers, json=payload)
-    if response.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"Hugging Face API error: {response.text}")
-    generated = response.json()
-    if isinstance(generated, list) and len(generated) > 0:
-        return generated[0].get("generated_text", "").strip()
-    return ""
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
+)
 
-# ===== /query endpoint =====
+def query_openrouter_api(prompt: str) -> str:
+    """Send a prompt to OpenRouter and return generated text."""
+    response = client.chat.completions.create(
+        model="mistralai/mistral-7b-instruct",  # Choose a model hosted on OpenRouter
+        messages=[
+            {"role": "system", "content": "You are a skilled data analyst."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return response.choices[0].message.content.strip()
+
+# = /query endpoint =
 class QueryRequest(BaseModel):
     question: str
 
 @app.post("/query")
 async def query(data: QueryRequest):
-    """Accept a text question and return an answer using Hugging Face API."""
-    answer_text = query_huggingface_api(data.question)
+    answer_text = query_openrouter_api(data.question)
     return {"answer": answer_text}
 
-# ===== /api endpoint =====
+# = /api endpoint =
 @app.post("/api/")
 async def api_endpoint(questions: UploadFile = File(...), files: List[UploadFile] = File(...)):
     """
@@ -45,7 +49,6 @@ async def api_endpoint(questions: UploadFile = File(...), files: List[UploadFile
     total_sales, top_region, day_sales_correlation,
     bar_chart, median_sales, total_sales_tax, cumulative_sales_chart
     """
-
     # Read questions file (not used in calculation in public tests)
     _ = await questions.read()
 
@@ -64,14 +67,14 @@ async def api_endpoint(questions: UploadFile = File(...), files: List[UploadFile
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     df = df.dropna(subset=['Date'])
 
-    # ===== Calculations =====
+    # = Calculations =
     total_sales = float(df['Sales'].sum())
     top_region = df.groupby('Region')['Sales'].sum().idxmax()
     day_sales_correlation = float(df['Date'].dt.day.corr(df['Sales']))
     median_sales = float(df['Sales'].median())
     total_sales_tax = float(total_sales * 0.10)
 
-    # ===== Bar chart: sales by region =====
+    # = Bar chart: sales by region =
     plt.figure(figsize=(4, 3))
     df.groupby('Region')['Sales'].sum().plot(kind='bar', color='blue')
     plt.xlabel('Region')
@@ -83,7 +86,7 @@ async def api_endpoint(questions: UploadFile = File(...), files: List[UploadFile
     bar_chart_b64 = base64.b64encode(bar_img.read()).decode('utf-8')
     plt.close()
 
-    # ===== Cumulative sales chart =====
+    # = Cumulative sales chart =
     plt.figure(figsize=(4, 3))
     df_sorted = df.sort_values('Date')
     df_sorted['CumulativeSales'] = df_sorted['Sales'].cumsum()
@@ -97,7 +100,7 @@ async def api_endpoint(questions: UploadFile = File(...), files: List[UploadFile
     cumulative_sales_chart_b64 = base64.b64encode(cum_img.read()).decode('utf-8')
     plt.close()
 
-    # ===== Final JSON result =====
+    # = Final JSON result =
     return {
         "total_sales": total_sales,
         "top_region": top_region,
